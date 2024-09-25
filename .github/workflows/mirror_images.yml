@@ -43,7 +43,8 @@ jobs:
           mapfile -t images < <(echo -e "${{ env.IMAGES }}")
           matrix_json='['
           for image in "${images[@]}"; do
-              matrix_json+="{\"image\": \"$image\"},"
+              [[ -z "$image" ]] && continue
+              matrix_json+="\"$image\","
           done
           matrix_json="${matrix_json%,}"
           matrix_json+=']'
