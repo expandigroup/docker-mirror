@@ -10,6 +10,9 @@ env:
     node
     alpine
 
+concurrency:
+  group: "mirror-images-${{ github.workflow }}"
+
 jobs:
   simulate-activity:
     name: "Simulate repo activity"
