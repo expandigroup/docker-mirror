@@ -22,6 +22,8 @@ jobs:
 
       - name: Simulate repository activity to keep schedule active
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit --amend --no-edit
           git push origin HEAD:main --force-with-lease || true
 
