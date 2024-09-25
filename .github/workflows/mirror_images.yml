@@ -49,9 +49,9 @@ jobs:
           matrix_json+=']'
           
           delim="EOF$RANDOM"
-          echo "matrix_json<<$DELIM" >> $GITHUB_OUTPUT
+          echo "matrix_json<<$delim" >> $GITHUB_OUTPUT
           echo "$matrix_json" >> $GITHUB_OUTPUT
-          echo "$DELIM" >> $GITHUB_OUTPUT
+          echo "$delim" >> $GITHUB_OUTPUT
 
   mirror:
     name: "Mirror images"
