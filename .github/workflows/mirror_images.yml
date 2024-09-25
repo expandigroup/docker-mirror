@@ -48,6 +48,9 @@ jobs:
           matrix_json="${matrix_json%,}"
           matrix_json+=']'
           
+          echo "Matrix JSON:"
+          echo "$matrix_json"
+          
           delim="EOF$RANDOM"
           echo "matrix_json<<$delim" >> $GITHUB_OUTPUT
           echo "$matrix_json" >> $GITHUB_OUTPUT
