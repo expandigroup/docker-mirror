@@ -97,6 +97,6 @@ jobs:
           echo
           echo "::group::Copying $src_image → $dst_image"
           skopeo list-tags "docker://$src_image" | jq -r '.Tags[]' | \
-            parallel -j$(nproc) --line-buffer \
+            parallel -j$(nproc) --line-buffer --joblog --retry-failed --retries 3 \
               skopeo copy "docker://$src_image:{}" "docker://$dst_image:{}"
           echo "::endgroup::"
