@@ -1,3 +1,5 @@
+name: "Mirror images"
+
 on:
   schedule:
     - cron: '0 0 * * *'
