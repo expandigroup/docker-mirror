@@ -101,6 +101,10 @@ jobs:
           
           for tag in $(skopeo list-tags "docker://$src_image" | jq -r '.Tags[]'); do
               echo "::group::Copying $src_image:$tag → $dst_image:$tag"
-              skopeo copy -f oci -f v2s2 "docker://$src_image:$tag" "docker://$dst_image:$tag"
+              status=0
+              skopeo copy -f oci -f v2s2 "docker://$src_image:$tag" "docker://$dst_image:$tag" || status=$?
               echo "::endgroup::"
+              if [[ $status -ne 0 ]]; then
+                  echo "::error::Failed to copy $src_image:$tag → $dst_image:$tag (status: $status)"
+              fi
           done
