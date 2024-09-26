@@ -98,8 +98,9 @@ jobs:
           echo "to:"
           echo "  $dst_image_name ($dst_image)"
           echo
-          echo "::group::Copying $src_image → $dst_image"
-          skopeo list-tags "docker://$src_image" | jq -r '.Tags[]' | \
-            parallel -j$(nproc) --line-buffer --joblog --retry-failed --retries 3 \
-              skopeo copy -f oci -f v2s2 "docker://$src_image:{}" "docker://$dst_image:{}"
-          echo "::endgroup::"
+          
+          for tag in $(skopeo list-tags "docker://$src_image" | jq -r '.Tags[]'); do
+              echo "::group::Copying $src_image:$tag → $dst_image:$tag"
+              skopeo copy -f oci -f v2s2 "docker://$src_image:$tag" "docker://$dst_image:$tag"
+              echo "::endgroup::"
+          done
