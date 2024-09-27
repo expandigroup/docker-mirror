@@ -9,6 +9,7 @@ env:
   IMAGES: |
     node
     alpine
+  BATCH_SIZE: 500
 
 concurrency:
   group: "mirror-images-${{ github.workflow }}"
@@ -44,36 +45,82 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -u - <<EOF
+          import json
+          import subprocess
           
-          mapfile -t images < <(echo -e "${{ env.IMAGES }}")
-          matrix_json='['
-          for image in "${images[@]}"; do
-              [[ -z "$image" ]] && continue
-              matrix_json+="\"$image\","
-          done
-          matrix_json="${matrix_json%,}"
-          matrix_json+=']'
+          from pathlib import Path
           
-          echo "Matrix JSON:"
-          echo "$matrix_json"
+          batch_size = int("${{ env.BATCH_SIZE }}")
+          images = """${{ env.IMAGES }}""".splitlines()
           
-          delim="EOF$RANDOM"
-          echo "matrix_json<<$delim" >> $GITHUB_OUTPUT
-          echo "$matrix_json" >> $GITHUB_OUTPUT
-          echo "$delim" >> $GITHUB_OUTPUT
+          outdir = Path("batches")
+          outdir.mkdir(exist_ok=True)
+          
+          matrix = []
+          
+          for image in images:
+              src_image_name = image
+              dst_image_name = src_image_name.replace("/", "-").replace(".", "") + "-mirror"
+              if "/" not in src_image_name:
+                  src_image_name = f"library/{src_image_name}"
+              src_image = f"docker.io/{src_image_name}"
+              dst_image = f"ghcr.io/${{ github.repository_owner }}/{dst_image_name}"
+          
+              info_json = subprocess.check_output(["skopeo", "list-tags", f"docker://{src_image}"], text=True)
+              info = json.loads(info_json)
+          
+              batch_num = 1
+              for i in range(0, len(info["Tags"]), batch_size):
+                  batch = info["Tags"][i:i + batch_size]
+                  payload = {
+                      "src_image": src_image,
+                      "dst_image": dst_image,
+                      "tags": batch,
+                  }
+                  with open(outdir / f"{image}-{batch_num}.json", "w") as f:
+                      json.dump(payload, f, indent=2)
+          
+                  matrix.append({
+                      "image": image,
+                      "batch_num": batch_num,
+                  })
+          
+                  batch_num += 1
+          
+          
+          print("::group::Matrix")
+          print(json.dumps(matrix, indent=2))
+          print("::endgroup:")
+          
+          with open("$GITHUB_OUTPUT", "a") as f:
+              f.write(f"matrix_json={json.dumps(matrix)}\n")          
+          EOF
+
+      - name: Upload batches artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: batches
+          path: batches
+          retention-days: 1
 
   mirror:
-    name: "Mirror images"
+    name: "Mirror ${{ matrix.batch.image }} (batch ${{ matrix.batch.batch_num }})"
     runs-on: ubuntu-latest
     needs: prepare
     permissions:
       packages: write
     strategy:
       matrix:
-        image: ${{ fromJSON(needs.prepare.outputs.matrix_json) }}
+        batch: ${{ fromJSON(needs.prepare.outputs.matrix_json) }}
       fail-fast: false
 
     steps:
+      - name: Download batches artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: batches
+
       - name: Log into GHCR with Skopeo
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
@@ -83,25 +130,20 @@ jobs:
         run: |
           set -euo pipefail
           
-          src_image_name="${{ matrix.image }}"
-          dst_image_name="${src_image_name//\//-}"
-          dst_image_name="${dst_image_name//./}"
-          dst_image_name="${dst_image_name}-mirror"
+          batch_file="${{ matrix.batch.image }}-${{ matrix.batch.batch_num }}.json"
           
-          if [[ "$src_image_name" != */* ]]; then
-              src_image_name="library/$src_image_name"
-          fi
-          
-          src_image="docker.io/$src_image_name"
-          dst_image="ghcr.io/${{ github.repository_owner }}/$dst_image_name"
-          
-          echo "Will copy:"
-          echo "  $src_image_name ($src_image)"
-          echo "to:"
-          echo "  $dst_image_name ($dst_image)"
+          echo "::group::Batch file: $batch_file"
+          cat "$batch_file"
           echo
+          echo "::endgroup::"
           
-          for tag in $(skopeo list-tags "docker://$src_image" | jq -r '.Tags[]'); do
+          src_image=$(jq -r '.src_image' "$batch_file")
+          dst_image=$(jq -r '.dst_image' "$batch_file")
+          mapfile -t tags < <(jq -r '.tags[]' "$batch_file")
+          
+          echo "Will copy ${{ matrix.batch.image }} ($src_image → $dst_image), batch ${{ matrix.batch.batch_num }}"
+          
+          for tag in "${tags[@]}"; do
               echo "::group::Copying $src_image:$tag → $dst_image:$tag"
               status=0
               skopeo copy --all -f oci -f v2s2 "docker://$src_image:$tag" "docker://$dst_image:$tag" || status=$?
